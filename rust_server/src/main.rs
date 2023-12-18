@@ -1,7 +1,13 @@
 use std::{net::{TcpListener, TcpStream}, collections::HashMap};
 use  std::io::{prelude::*, BufReader};
+use std::sync::{Arc, Mutex, RwLock};
 
 use serde::{Serialize, Deserialize};
+use ctrlc;
+
+
+mod thread_pool;
+use thread_pool::ThreadPool;
 
 #[derive(Debug)]
 enum HttpMethod{
@@ -70,18 +76,58 @@ impl Repo{
 
 
 fn main() {
+    //Init resources
+    //TODO to config file
     let listener = TcpListener::bind("localhost:7878").unwrap();
 
-    let mut repo = Repo::new();
+    //Allowing multiple reads and single write
+    let repo = Arc::new(RwLock::new(Repo::new()));
 
+    //TODO read from env or config file
+    let thread_pool = ThreadPool::new(5);
+
+
+
+
+    // Use a Mutex to track whether to continue the loop
+    let terminated = Arc::new(Mutex::new(false));
+
+    // Listening for CTRL + C signal to perform graceful shutdown
+    let terminated_clone = Arc::clone(&terminated);
+    ctrlc::set_handler(move || {
+        println!("\nServer stop signal received");
+        println!("Shutting down server...");
+
+        // Set the flag to stop the loop
+        let mut termintd = terminated_clone.lock().unwrap();
+        *termintd = true;
+
+        //Sends tcp request to make sure there will be one more iteration inside loop that listens for tcp connections
+         TcpStream::connect("localhost:7878").unwrap();
+    })
+    .expect("Error setting Ctrl+C handler");
+
+
+    // Listening for TCP
+    let termntd_clone = Arc::clone(&terminated);
     for stream in listener.incoming() {
-        let stream = stream.unwrap();
+        //Check for termination
+        let terminate = termntd_clone.lock().unwrap();
+        if *terminate {
+            break;
+        }
 
-        handle_connection(stream, &mut repo);
+        let stream = stream.unwrap();
+        let repo_instance = Arc::clone(&repo);
+
+        thread_pool.execute(move || {
+            handle_connection(stream, repo_instance);
+        })
+
     }
 }
 
-fn handle_connection(mut stream: TcpStream, repo: &mut Repo){
+fn handle_connection(mut stream: TcpStream, repo: Arc<RwLock<Repo>>){
     let request = parse_request(&mut stream);
 
     match request{
@@ -185,7 +231,7 @@ fn parse_request(stream: &mut TcpStream) -> Result<HttpRequest, String>{
     Ok(request)
 }
 
-fn handle_get(request: HttpRequest ,stream: &mut TcpStream, repo: &Repo){
+fn handle_get(request: HttpRequest ,stream: &mut TcpStream, repo: Arc<RwLock<Repo>>){
     let id:i64;
 
     //Extract id
@@ -208,43 +254,45 @@ fn handle_get(request: HttpRequest ,stream: &mut TcpStream, repo: &Repo){
     } 
 
 
+    //Read only operation
+    //TODO Check lifetime scope for if let
+    if let Ok(ro_repo) = repo.read(){
+         match ro_repo.get_by_id(id){
+            Some(entity) => {
+                let json_entity = serde_json::to_string(&entity).unwrap();
+                let ok_resp = "HTTP/1.1 200 OK \r\n";
+                let content_len = json_entity.len();
 
-    let entity = match repo.get_by_id(id){
-        Some(e) => e,
-        None =>{
-            let not_found_resp = "HTTP/1.1 404 NotFound \r\n\r\n";
-            stream.write_all(not_found_resp.as_bytes()).unwrap();
-            return;
-        }
-    };
+                let response = format!(
+                    "{ok_resp}Content-Length: {content_len}\r\nContent-Type: application/json\r\n\r\n{json_entity}"
+                );
 
-
-    let json_entity = serde_json::to_string(&entity).unwrap();
-    let ok_resp = "HTTP/1.1 200 OK \r\n";
-    let content_len = json_entity.len();
-
-    let response = format!(
-        "{ok_resp}Content-Length: {content_len}\r\nContent-Type: application/json\r\n\r\n{json_entity}"
-    );
-
-    stream.write_all(response.as_bytes()).unwrap();
+                stream.write_all(response.as_bytes()).unwrap();
+            }
+            None =>{
+                let not_found_resp = "HTTP/1.1 404 NotFound \r\n\r\n";
+                stream.write_all(not_found_resp.as_bytes()).unwrap();
+                return;
+            }
+        };
+    }
 }
 
 
 
-
-fn handle_put(request: HttpRequest, stream: &mut TcpStream, repo: &mut Repo){
+fn handle_put(request: HttpRequest, stream: &mut TcpStream, repo: Arc<RwLock<Repo>>){
     if request.path != "/"{
         let response = "HTTP/1.1 400 BadRequest \r\n\r\n";
         stream.write_all(response.as_bytes()).unwrap();
         return;
     }
-
-    if let Some(body)  = request.body{
-        repo.insert(body);
-        let response = "HTTP/1.1 200 OK \r\n\r\n";
-        stream.write_all(response.as_bytes()).unwrap();
-        return;
+    if let Ok(mut w_repo) = repo.write(){
+        if let Some(body)  = request.body{
+            w_repo.insert(body);
+            let response = "HTTP/1.1 200 OK \r\n\r\n";
+            stream.write_all(response.as_bytes()).unwrap();
+            return;
+        }
     }
 
     let response = "HTTP/1.1 400 BadRequest \r\n\r\n";
