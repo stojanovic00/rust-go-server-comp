@@ -1,0 +1,9 @@
+name: rust-go-comp
+services:
+  rust-server:
+    build: ./rust_server
+    ports:
+      - "8001:8001"
+    env_file:
+      ./rust_server/.env
+

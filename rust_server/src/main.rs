@@ -55,7 +55,7 @@ fn main() {
 
 
     //Init resources
-    let listener = TcpListener::bind(tcp_address).unwrap();
+    let listener = TcpListener::bind(tcp_address.clone()).unwrap();
 
     //Allowing multiple reads and single write
     let repo = Arc::new(RwLock::new(Repo::new()));
@@ -78,7 +78,7 @@ fn main() {
         *termintd = true;
 
         //Sends tcp request to make sure there will be one more iteration inside loop that listens for tcp connections
-         TcpStream::connect("localhost:7878").unwrap();
+         TcpStream::connect(tcp_address.clone()).unwrap();
     })
     .expect("Error setting Ctrl+C handler");
 
