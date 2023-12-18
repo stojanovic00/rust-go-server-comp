@@ -1,7 +1,7 @@
 use std::{net::{TcpListener, TcpStream}, collections::HashMap};
 use  std::io::{prelude::*, BufReader};
 
-use serde::{Serialize, Deserialize, de::value};
+use serde::{Serialize, Deserialize};
 
 #[derive(Debug)]
 enum HttpMethod{
@@ -38,7 +38,7 @@ pub struct Entity{
 }
 
 impl Entity{
-    fn new(new_id: i64, new_desc: String, new_val: f32) -> Self{
+    pub fn new(new_id: i64, new_desc: String, new_val: f32) -> Self{
         Self{
             id: new_id,
             description: new_desc,
@@ -49,14 +49,22 @@ impl Entity{
 
 
 pub struct Repo{
-    map: HashMap<i64,Entity>
+    entities: HashMap<i64,Entity>
 }
 
 impl Repo{
-    fn new() -> Self{
+    pub fn new() -> Self{
         Self{
-            map:HashMap::new()
+            entities:HashMap::new()
         }
+    }
+
+    pub fn get_by_id(&self, id: i64) ->  Option<&Entity>{
+        self.entities.get(&id)
+    }
+
+    pub fn insert(&mut self, entity: Entity){
+        self.entities.insert(entity.id, entity);
     }
 }
 
@@ -65,9 +73,6 @@ fn main() {
     let listener = TcpListener::bind("localhost:7878").unwrap();
 
     let mut repo = Repo::new();
-    let e1 = Entity::new(1,String::from( "Entity 1"), 11.5);
-    repo.map.insert(e1.id, e1);
-
 
     for stream in listener.incoming() {
         let stream = stream.unwrap();
@@ -104,10 +109,9 @@ fn parse_request(stream: &mut TcpStream) -> Result<HttpRequest, String>{
     let mut request = HttpRequest::new();
 
     //Parsing header
-    let mut line_break = false;
     loop {
-        let mut line = &mut String::from("");
-        if let Ok(size) = buff_reader.read_line(line){
+        let  line = &mut String::from("");
+        if let Ok(_) = buff_reader.read_line(line){
             if line == "\r\n"{
                 break;
             }
@@ -158,7 +162,7 @@ fn parse_request(stream: &mut TcpStream) -> Result<HttpRequest, String>{
     }
 
     let mut buffer =  vec![0;content_length as usize];
-    let mut body_content = String::from("");
+    let body_content;
     if let Ok(_) = buff_reader.read_exact(&mut buffer){
         body_content =String::from_utf8_lossy(&buffer).to_string();
     }
@@ -205,7 +209,7 @@ fn handle_get(request: HttpRequest ,stream: &mut TcpStream, repo: &Repo){
 
 
 
-    let entity = match repo.map.get(&id){
+    let entity = match repo.get_by_id(id){
         Some(e) => e,
         None =>{
             let not_found_resp = "HTTP/1.1 404 NotFound \r\n\r\n";
@@ -237,7 +241,7 @@ fn handle_put(request: HttpRequest, stream: &mut TcpStream, repo: &mut Repo){
     }
 
     if let Some(body)  = request.body{
-        repo.map.insert(body.id, body);
+        repo.insert(body);
         let response = "HTTP/1.1 200 OK \r\n\r\n";
         stream.write_all(response.as_bytes()).unwrap();
         return;
