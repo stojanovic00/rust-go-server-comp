@@ -7,6 +7,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 func main() {
@@ -20,6 +21,7 @@ func main() {
 	fmt.Printf("Listening for tcp requests on: %s\n", tcp_address)
 
 	repo := NewRepo()
+	mapMux := &sync.RWMutex{}
 
 	for {
 		conn, err := listener.Accept()
@@ -27,11 +29,11 @@ func main() {
 			fmt.Println("Error accepting:", err)
 			continue
 		}
-		handleConnection(conn, repo)
+		go handleConnection(conn, repo, mapMux)
 	}
 }
 
-func handleConnection(conn net.Conn, repo *Repo) {
+func handleConnection(conn net.Conn, repo *Repo, mapMux *sync.RWMutex) {
 	defer conn.Close()
 
 	request, err := ParseRequest(conn)
@@ -42,43 +44,64 @@ func handleConnection(conn net.Conn, repo *Repo) {
 
 	switch request.Method {
 	case Get:
-		handleGet(conn, repo, request)
+		handleGet(conn, repo, request, mapMux)
 	case Put:
-		handlePut(conn, repo, request)
+		handlePut(conn, repo, request, mapMux)
 	default:
 		response := "HTTP/1.1 501 NotImplemented\r\nConnection: close\r\n\r\n"
 		conn.Write([]byte(response))
 	}
 }
 
-func handleGet(conn net.Conn, repo *Repo, request *HttpRequest) {
+func handleGet(conn net.Conn, repo *Repo, request *HttpRequest, mapMux *sync.RWMutex) {
 	idStr := strings.TrimPrefix(request.Path, "/")
 	id, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil {
 		response := "HTTP/1.1 400 BadRequest\r\nConnection: close\r\n\r\n"
 		conn.Write([]byte(response))
+		return
 	}
 
-	entity, ok := repo.Entities[id]
+	mapMux.RLock()
+	entry, ok := repo.Entries[id]
+	mapMux.RUnlock()
 	if !ok {
 		response := "HTTP/1.1 404 NotFound\r\nConnection: close\r\n\r\n"
 		conn.Write([]byte(response))
+		return
 	}
 
-	jsonBytes, err := json.Marshal(entity)
+	jsonBytes, err := json.Marshal(entry.Entity)
 	if err != nil {
 		response := "HTTP/1.1 500 NotImplemented\r\nConnection: close\r\n\r\n"
 		conn.Write([]byte(response))
+		return
 	}
 
 	jsonStr := string(jsonBytes)
 
-	response := fmt.Sprintf("HTTP/1.1 200 OK\r\nContent-Length: %d\r\nConnection: close\r\n\r\n%s", len(jsonStr), jsonStr)
+	response := fmt.Sprintf("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: %d\r\nConnection: close\r\n\r\n%s", len(jsonStr), jsonStr)
 	conn.Write([]byte(response))
 }
 
-func handlePut(conn net.Conn, repo *Repo, request *HttpRequest) {
-	repo.Entities[request.Body.Id] = *request.Body
+func handlePut(conn net.Conn, repo *Repo, request *HttpRequest, mapMux *sync.RWMutex) {
+	mapMux.RLock()
+	_, exists := repo.Entries[request.Body.Id]
+	mapMux.RUnlock()
+
+	if exists {
+		mapMux.RLock()
+		entry, _ := repo.Entries[request.Body.Id]
+		entry.Mux.Lock()
+		repo.Entries[request.Body.Id] = *NewMapEntryWMux(*request.Body, entry.Mux)
+		entry.Mux.Unlock()
+		mapMux.RUnlock()
+	} else {
+		mapMux.Lock()
+		repo.Entries[request.Body.Id] = *NewMapEntry(*request.Body)
+		mapMux.Unlock()
+	}
+
 	response := fmt.Sprintf("HTTP/1.1 200 OK\r\nConnection: close\r\n\r\n")
 	conn.Write([]byte(response))
 }
