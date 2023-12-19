@@ -156,7 +156,7 @@ fn handle_get(request: HttpRequest ,stream: &mut TcpStream, repo: Arc<RwLock<Rep
                 let content_len = json_entity.len();
 
                 let response = format!(
-                    "{ok_resp}Content-Length: {content_len}\r\nContent-Type: application/json\r\n\r\n{json_entity}"
+                    "{ok_resp}Content-Length: {content_len}\r\nContent-Type: application/json\r\nConnection: close\r\n\r\n{json_entity}"
                 );
 
                 stream.write_all(response.as_bytes()).unwrap();
@@ -215,7 +215,7 @@ fn handle_put(request: HttpRequest, stream: &mut TcpStream, repo: Arc<RwLock<Rep
 
 
 
-        let response = "HTTP/1.1 200 OK \r\n\r\n";
+        let response = "HTTP/1.1 200 OK\r\nConnection: close\r\n\r\n";
         stream.write_all(response.as_bytes()).unwrap();
         return;
     } else {
