@@ -60,7 +60,7 @@ fn main() {
     //Allowing multiple reads and single write
     let repo = Arc::new(RwLock::new(Repo::new()));
 
-    let thread_pool = ThreadPool::new(5);
+    let thread_pool = ThreadPool::new(thread_pool_size);
 
 
 
