@@ -1,5 +1,6 @@
 use std::{net::{TcpListener, TcpStream}, collections::HashMap};
 use  std::io::{prelude::*};
+use std::process::exit;
 use std::sync::{Arc, Mutex, RwLock};
 
 use ctrlc;
@@ -79,6 +80,7 @@ fn main() {
 
         //Sends tcp request to make sure there will be one more iteration inside loop that listens for tcp connections
          TcpStream::connect(tcp_address.clone()).unwrap();
+            exit(0)
     })
     .expect("Error setting Ctrl+C handler");
 
