@@ -155,16 +155,18 @@ func handleGet(conn net.Conn, repo *Repo, request *HttpRequest, mapMux *sync.RWM
 		return
 	}
 
-	mapMux.RLock()
-	entry, ok := repo.Entries[id]
-	mapMux.RUnlock()
+	//mapMux.RLock()
+	entry, ok := repo.Entries.Load(id)
+	//entry, ok := repo.Entries[id]
+	//mapMux.RUnlock()
 	if !ok {
 		response := "HTTP/1.1 404 NotFound\r\nConnection: close\r\n\r\n"
 		conn.Write([]byte(response))
 		return
 	}
 
-	jsonBytes, err := json.Marshal(entry.Entity)
+	//jsonBytes, err := json.Marshal(entry.Entity)
+	jsonBytes, err := json.Marshal(entry)
 	if err != nil {
 		response := "HTTP/1.1 500 NotImplemented\r\nConnection: close\r\n\r\n"
 		conn.Write([]byte(response))
@@ -178,22 +180,24 @@ func handleGet(conn net.Conn, repo *Repo, request *HttpRequest, mapMux *sync.RWM
 }
 
 func handlePut(conn net.Conn, repo *Repo, request *HttpRequest, mapMux *sync.RWMutex) {
-	mapMux.RLock()
-	_, exists := repo.Entries[request.Body.Id]
-	mapMux.RUnlock()
+	//mapMux.RLock()
+	//_, exists := repo.Entries[request.Body.Id]
+	//mapMux.RUnlock()
+	//
+	//if exists {
+	//	mapMux.RLock()
+	//	entry, _ := repo.Entries[request.Body.Id]
+	//	entry.Mux.Lock()
+	//	repo.Entries[request.Body.Id] = *NewMapEntryWMux(*request.Body, entry.Mux)
+	//	entry.Mux.Unlock()
+	//	mapMux.RUnlock()
+	//} else {
+	//	mapMux.Lock()
+	//	repo.Entries[request.Body.Id] = *NewMapEntry(*request.Body)
+	//	mapMux.Unlock()
+	//}
 
-	if exists {
-		mapMux.RLock()
-		entry, _ := repo.Entries[request.Body.Id]
-		entry.Mux.Lock()
-		repo.Entries[request.Body.Id] = *NewMapEntryWMux(*request.Body, entry.Mux)
-		entry.Mux.Unlock()
-		mapMux.RUnlock()
-	} else {
-		mapMux.Lock()
-		repo.Entries[request.Body.Id] = *NewMapEntry(*request.Body)
-		mapMux.Unlock()
-	}
+	repo.Entries.Swap(request.Body.Id, request.Body)
 
 	response := fmt.Sprintf("HTTP/1.1 200 OK\r\nConnection: close\r\n\r\n")
 	conn.Write([]byte(response))

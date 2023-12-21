@@ -1,4 +1,5 @@
 # Metrics
+
 - response time
 - throughput
 - CPU utilization
@@ -8,6 +9,7 @@
 
 
 # Tools:
+
 - jmeter
 
 # Requests

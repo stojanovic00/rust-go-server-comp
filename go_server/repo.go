@@ -3,12 +3,12 @@ package main
 import "sync"
 
 type Repo struct {
-	Entries map[int64]MapEntry
+	Entries sync.Map
 }
 
 func NewRepo() *Repo {
 	return &Repo{
-		Entries: make(map[int64]MapEntry),
+		Entries: sync.Map{},
 	}
 }
 
