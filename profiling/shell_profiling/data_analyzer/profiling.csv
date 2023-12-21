@@ -1,0 +1,2 @@
+lang,pool_size,requests,connections,avg_cpu[%],max_cpu[%],avg_mem[%],max_mem[%],total_test_time[s],per_request_mean_time[ms],transfer_rate[kB/s],connection_latency[ms],connection_processing_time[ms]
+golang,8,100000,100,117.750,120.000,0.088,0.090,8.516,8.516,1456.320,4.000,5.000,
