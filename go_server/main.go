@@ -158,7 +158,6 @@ func handleGet(conn net.Conn, repo *Repo, request *HttpRequest, mapMux *sync.RWM
 	//mapMux.RLock()
 	entry, ok := repo.Entries.Load(id)
 	//entry, ok := repo.Entries[id]
-	//mapMux.RUnlock()
 	if !ok {
 		response := "HTTP/1.1 404 NotFound\r\nConnection: close\r\n\r\n"
 		conn.Write([]byte(response))
@@ -166,7 +165,10 @@ func handleGet(conn net.Conn, repo *Repo, request *HttpRequest, mapMux *sync.RWM
 	}
 
 	//jsonBytes, err := json.Marshal(entry.Entity)
+	//entry.Mux.RLock()
 	jsonBytes, err := json.Marshal(entry)
+	//entry.Mux.RUnLock()
+	//mapMux.RUnlock()
 	if err != nil {
 		response := "HTTP/1.1 500 NotImplemented\r\nConnection: close\r\n\r\n"
 		conn.Write([]byte(response))
