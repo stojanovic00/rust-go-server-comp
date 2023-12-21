@@ -74,7 +74,7 @@ pub fn parse_request(stream: &mut TcpStream) -> Result<HttpRequest, String>{
     //EOF is appended when connection is closed
     let mut content_length = 0;
     for line in &request.headers{
-        if line.contains("Content-Length"){
+        if line.to_lowercase().contains("content-length"){
             let parts: Vec<&str> = line.split(":").collect();
             let len_str = parts[1].trim();
             content_length = len_str.parse::<i32>().unwrap();

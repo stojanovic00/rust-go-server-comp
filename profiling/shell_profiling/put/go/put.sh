@@ -20,12 +20,6 @@ sh -c 'echo $$ > get_pid.txt; exec  ../../../../go_server/server' &
 # Waits for server to start
 sleep 3
 
-# Populates with data
-curl --request PUT \
-  --url http://localhost:8002/ \
-  --header 'Content-Type: application/json' \
-  --data '{ "id": 1, "description": "A", "value": 11 }'
-
 #Track memory usage
 pidstat  -r -p $(cat get_pid.txt) 1 > mem.txt &
 
@@ -33,13 +27,13 @@ pidstat  -r -p $(cat get_pid.txt) 1 > mem.txt &
 pidstat  -u -p $(cat get_pid.txt) 1 > cpu.txt &
 
 # Start benchmarking
-ab  -c $3 -n $2  http://localhost:8002/1 > bench.txt
+ab -n $2 -c $3 -T 'application/json' -u body.json http://localhost:8002/ > bench.txt
 
 kill $(cat get_pid.txt)
 rm get_pid.txt
 
 # Parse all created data and analyze
-./data_analyzer golang $1 $2 $3
+./data_analyzer go $1 $2 $3
 
 rm cpu.txt
 rm mem.txt

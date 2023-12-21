@@ -112,7 +112,9 @@ type BenchStats struct {
 	//ms
 	PerRequestTime float64
 	//KBytes/sec
-	TransferRate float64
+	TransferRateReceived float64
+	//KBytes/sec
+	TransferRateSent float64
 	//Start of connection till start processing
 	ConnectionLatency float64
 	//Start processing till connection close
@@ -132,7 +134,8 @@ func getBenchStats() *BenchStats {
 	scanner := bufio.NewScanner(file)
 
 	stats := &BenchStats{
-		PerRequestTime: -1.0,
+		PerRequestTime:   -1.0,
+		TransferRateSent: 0,
 	}
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -164,7 +167,14 @@ func getBenchStats() *BenchStats {
 			valuePart = strings.TrimSpace(valuePart)
 			strValue := strings.Split(valuePart, " ")[0]
 			value, _ := strconv.ParseFloat(strValue, 64)
-			stats.TransferRate = value
+			stats.TransferRateReceived = value
+		}
+
+		if strings.Contains(line, "kb/s sent") {
+			valuePart := strings.TrimSpace(line)
+			strValue := strings.Split(valuePart, " ")[0]
+			value, _ := strconv.ParseFloat(strValue, 64)
+			stats.TransferRateSent = value
 		}
 
 		if strings.Contains(line, "Connect:") {
@@ -196,7 +206,7 @@ func main() {
 	avgMem, maxMem := getMemStats()
 	benchStats := getBenchStats()
 
-	csvLine := fmt.Sprintf("%s,%d,%d,%d,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,\n",
+	csvLine := fmt.Sprintf("%s,%d,%d,%d,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,\n",
 		lang,
 		pool_size,
 		requests,
@@ -207,7 +217,8 @@ func main() {
 		maxMem,
 		benchStats.TotalTestTime,
 		benchStats.PerRequestTime,
-		benchStats.TransferRate,
+		benchStats.TransferRateReceived,
+		benchStats.TransferRateSent,
 		benchStats.ConnectionLatency,
 		benchStats.ConnectionProcessingTime,
 	)
@@ -227,7 +238,7 @@ func main() {
 	if fileStats.Size() == 0 {
 		// File is empty, write the header
 		header := "lang,pool_size,requests,connections,avg_cpu[%],max_cpu[%],avg_mem[%],max_mem[%]," +
-			"total_test_time[s],per_request_mean_time[ms],transfer_rate[kB/s],connection_latency[ms],connection_processing_time[ms]\n"
+			"total_test_time[s],per_request_mean_time[ms],transfer_rate_rcvd[kB/s],transfer_rate_sent[kB/s],connection_latency[ms],connection_processing_time[ms]\n"
 		if _, err = csvFile.WriteString(header); err != nil {
 			panic(err)
 		}

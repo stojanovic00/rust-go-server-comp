@@ -1,8 +1,19 @@
 #!/bin/bash
+# Arguments:
+# 1: pool size
+# 2: Number of requests
+# 3: Number of connections
+
+# Check if required arguments are provided
+if [ $# -lt 3 ]; then
+    echo "Usage: $0 <pool_size> <num_of_requests> <num_of_connections>"
+    exit 1
+fi
+
 
 # starts servers and gets PID
 export TCP_ADDRESS=localhost:8001
-export THREAD_POOL_SIZE=8
+export THREAD_POOL_SIZE=$1
 
 sh -c 'echo $$ > get_pid.txt; exec  ../../../../rust_server/target/debug/rust_server ' &
 
@@ -16,14 +27,22 @@ curl --request PUT \
   --data '{ "id": 1, "description": "A", "value": 11 }'
 
 #Track memory usage
-pidstat  -r -p $(cat get_pid.txt) 1 > get_mem.txt &
+pidstat  -r -p $(cat get_pid.txt) 1 > mem.txt &
 
-#Track memory usage
-pidstat  -u -p $(cat get_pid.txt) 1 > get_cpu.txt &
+#Track cpu usage
+pidstat  -u -p $(cat get_pid.txt) 1 > cpu.txt &
 
 # Start benchmarking
-ab  -c 100 -n 100000  http://localhost:8001/1 > get_bench.txt
+ab  -c $3 -n $2  http://localhost:8001/1 > bench.txt
 
 kill $(cat get_pid.txt)
+rm get_pid.txt
+
+# Parse all created data and analyze
+./data_analyzer rust $1 $2 $3
+
+rm cpu.txt
+rm mem.txt
+rm bench.txt
 
 

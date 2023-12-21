@@ -74,7 +74,7 @@ func ParseRequest(conn net.Conn) (*HttpRequest, error) {
 	//Parse body
 	contentLength := 0
 	for _, header := range request.Headers {
-		if strings.Contains(header, "Content-Length") {
+		if strings.Contains(strings.ToLower(header), "content-length") {
 			parts := strings.Split(header, ":")
 			contentLengthStr := strings.TrimSpace(parts[1])
 			var err error
