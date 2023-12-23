@@ -1,0 +1,108 @@
+\documentclass[12pt]{article}
+
+% фонтови и језик
+% fontspec docs: shorturl.at/ouI26
+\usepackage{fontspec}
+
+% polyglossia docs: shorturl.at/gELX9
+\usepackage{polyglossia}
+\newfontfamily\cyrillicfont{Times New Roman} % може се заменити компатибилним фонтом
+\newfontfamily\cyrillicfontsf{Arial}         % може се заменити компатибилним фонтом
+\newfontfamily\cyrillicfonttt{Courier New}   % може се заменити компатибилним фонтом
+\setmainlanguage[Script=cyrillic]{serbian}
+\setotherlanguage{english}
+
+% вербатим линкови (веб адресе, имејлови, релативне адресе, итд.)
+% url docs: shorturl.at/iktM4
+\usepackage{url}
+
+% хиперлинкови
+% hyperref docs: shorturl.at/fmHPW
+\usepackage{hyperref}
+
+% приказивање математичких израза
+% amsmath docs: shorturl.at/avJU3
+\usepackage{amsmath}
+
+% напредни пакет за исцрватање графика коришћењем команде \includegraphics
+% graphicx docs: shorturl.at/diHUW
+\usepackage{graphicx}
+\graphicspath{{images/}}    % коренски директоријум слика, сваки пут када се користи includegraphics команда путања која се задаје треба да буде релативна у односу на овај директоријум
+
+% рад са прилозима
+% appendix docs: shorturl.at/uwEL1
+\usepackage{appendix}
+
+% подешавања маргина
+\usepackage{vmargin}
+\setmarginsrb{3 cm}{2.5 cm}{3 cm}{2.5 cm}{1 cm}{1.5 cm}{1 cm}{1.5 cm}
+
+% исцртавање програмског кода
+\usepackage{minted}
+
+% подешавање размака линија текста
+\usepackage{setspace}
+
+% цртање табела
+\usepackage{booktabs}
+
+% додатни макрои за израду рада
+\usepackage{rsvp}
+
+\usepackage{csvsimple}
+\usepackage{rotating}
+\usepackage{adjustbox}
+\usepackage{booktabs}
+
+
+
+\title{Поређење имплементација вишенитног сервера у програмским језицима \textit{Rust} и \textit{Go}}                         % ТОДО изменити
+\author{Александар Стојановић}                  % ТОДО изменити
+\newcommand{\studentindex}{E2 119/2023}     % ТОДО изменити
+
+\input{poglavlja/preamble}
+
+
+\begin{document}
+\input{poglavlja/naslovna_strana}
+
+\pagenumbering{roman}              
+\input{poglavlja/listinzi}
+\pagebreak
+
+\pagenumbering{arabic}
+\input{poglavlja/uvod}
+\pagebreak
+
+\input{poglavlja/korisceni_jezici}
+\pagebreak
+
+
+\input{poglavlja/osluskivanje_zahteva}
+\pagebreak
+
+
+\input{poglavlja/threadpool}
+\pagebreak
+
+\input{poglavlja/konkurentan_pristup_skladistu_podataka}
+\pagebreak
+
+\input{poglavlja/stress_test}
+\pagebreak
+
+\input{poglavlja/poredjenje_performansi}
+\pagebreak
+
+
+\input{poglavlja/zakljucak}
+\pagebreak
+
+
+
+
+\bibliographystyle{plain}
+\typeout{}
+\bibliography{biblist}              % ТОДО попуњавати референцама
+
+\end{document}

@@ -1,0 +1,69 @@
+\section{\textit{Threadpool}}
+
+Акценат овог сервера је паралелна вишенитна обрада захтева, стога је потребно обезбедити механизме за њену реализацију. Оба језика у својим стандардним пакетима садрже подршку за конкурентно програмирање, које подразумева коришћење нити, механизме за екслузиван приступ ресурсима, као и канале за размену порука између нити. Треба напоменути да \textit{Rust} када ради са нитима ради са системским нитима, док \textit{Go} ради са зеленим нитима, које заузимају знатно мање ресурса у односу на системске нити и о алокацији и деалокацији њима потребних ресурса брине се посебан планер. На свакој зеленој нити може се покренути једна го рутина.\\
+
+Како се не би за сваки добијени захтев креирала нова нит и на тај начин могуће покренуо превелик број нити које би искориштавале превише системских ресурса и тиме угрозиле перформансе, у имплементацију се уводи \textit{threadpool} чија је улога да на почетку рада сервера алоцира одређен број нити (овако се смањује \textit{overhead} за креирање нити, јер се ради само на почетку рада сервера) и затим за обраду сваког од захтева посуди једну нит из њега, која се на крају обраде захтева враћа у њега и могуће ју је затим доделити некоме другом. 
+
+\subsection{\textit{Rust} имплементација}
+
+Ради манипулације унутар \textit{threadpool}-а, нит je обмотанa структуром  \textit{Worker} \ref{code:worker_rust}, која садржи идентификатор нити, као и \textit{JoinHandle} структуру која омогућава приступ и манипулацију над нити. Приликом креирања \textit{Worker}-а додељује му се идентификатор и покреће се нит која тренутно не ради ништа, већ чека на поруку од \textit{threadpool}-а са задатком који треба да обави. \\
+
+\begin{listing}[H]
+\inputminted{rust}{kodovi/worker.rs}
+\caption{\textit{Worker} имплементација \textit{(Rust)}}
+\label{code:worker_rust}
+\end{listing}
+
+\textit{Тhreadpool} \ref{code:threadpool_rust} у себи садржи вектор доступних \textit{worker}-а, a комуницира са њима и задаје им задатке  преко канала за размену порука. Будући да \textit{Rust}-ова имплементација канала за размену порука функционише по принцпипу вишеструки произвођачи - јединствен конзумент, а \textit{threadpool}-у је потребан обрнут модел, где он представља јединственог произвођача порука које се шаљу ка више \textit{worker}-а, с тиме да само један \textit{worker} може да прими исту поруку, \textit{threadpool} приликом свог креирања креира  један канал за слање порука, којег додељује самом себи и један канал за пријем порука који, да би омогућио његово коришћење свим \textit{worker}-има у ексклузивном режиму, умотава у \texttt{Мutex<Arc>} и као таквог га додељује свим \textit{worker}-има. Сада су \textit{worker}-и у могућности да када добију ексклузиван приступ каналу за пријем ишчитају поруку и обраде је, где чим прочитају поруку из канала, екслузиван приступ каналу дају некоме другом.\\
+
+\begin{listing}[H]
+\inputminted{rust}{kodovi/threadpool.rs}
+\caption{\textit{Threadpool} имплементација \textit{(Rust)}}
+\label{code:threadpool_rust}
+\end{listing}
+
+\textit{Тhreadpool} задаје задатке \textit{worker}-има тако што као поруку шаље \textit{closure} који треба да се изврши \ref{code:threadpool_execute_rust}.\\
+
+\begin{listing}[H]
+\inputminted{rust}{kodovi/threadpool_execute.rs}
+\caption{\textit{Execute} метода \textit{threadpool}-а \textit{(Rust)}}
+\label{code:threadpool_execute_rust}
+\end{listing}
+
+Веома битан аспект \textit{threadpool}-а је његово деалоцирање заједно са деалоцирањем свих \textit{worker}-а, које се постиже имплементирањем \textit{Drop trait}-а \ref{code:threadpool_drop_rust}. У тренутку када се прекине бесконачна петља која ослушкује \textit{TCP} конекције \ref{code:connection_listener_rs}, \textit{threadpool} излази из \textit{scope}-a и позива се његов \textit{Drop trait} који деалоцира канал за слање порука, што за ефекат има прекид бесконачне петље унутар \textit{worker}-а која чека на нове поруке \ref{code:worker_rust}. Након прекида рада свих \textit{worker}-а, \textit{threadpool} чека да сви \textit{worker}-и заврше обраду захтева којег су последњег узели и тако постиже \textit{graceful shutdown} сервера.
+
+\begin{listing}[H]
+\inputminted{rust}{kodovi/threadpool_drop.rs}
+\caption{\textit{Drop trait threadpool}-а \textit{(Rust)}}
+\label{code:threadpool_drop_rust}
+\end{listing}
+
+\subsection{\textit{Go} имплементација}
+
+Будући да је имплементација механизма за слање порука путем канала у \textit{Go}-у имплементирана по моделу јединствен произвођач-вишеструки конзументи , која директно належе на потребе комуникационог модела којим се \textit{threadpool} користи, имплементација \textit{threadpool}-а у \textit{Go}-у је нешто једноставнија.\\
+
+У овој имплементацији нема потребе за креирањем специјалних структура података за \textit{threadpool} и \textit{worker}-е, већ је довољно направити само један канал кроз који ће се преносити пристигле \textit{TCP} конекције као и \textit{wait} групa која ће се постарати за безбедно прекидање рада нити приликом \textit{graceful shutdown}-а. \ref{code:connection_ch_and_wg_init_go}\\
+
+\begin{listing}[H]
+\inputminted{go}{kodovi/connection_ch_and_wg_init.go}
+\caption{Инициjализација канала и \textit{wait} групе  \textit{(Go)}}
+\label{code:connection_ch_and_wg_init_go}
+\end{listing}
+
+Затим се покреће одређен број го рутина који одговара величини \textit{threadpool}-а. Њима је приликом креирања прослеђен канал за размену порука којег све онe ослушкују и у тренутку када из њега приме \textit{TCP} конекцију одмах је обрађују.\ref{code:threadpool_start_go}\\
+
+\begin{listing}[H]
+\inputminted{go}{kodovi/threadpool_start.go}
+\caption{Покретање го рутина  \textit{(Go)}}
+\label{code:threadpool_start_go}
+\end{listing}
+
+Задаци се прослеђују го рутинама тако што се унутар бесконачне петље која ослушкује нове конекције при пристизању нове конекције она проследи у канал за слање порука.\ref{code:connection_listener_and_sender_go} \\
+
+\begin{listing}[H]
+\inputminted{go}{kodovi/connection_listener_and_sender.go}
+\caption{Прослеђивање конекција го рутинама  \textit{(Go)}}
+\label{code:connection_listener_and_sender_go}
+\end{listing}
+
+Приликом прекидања бесконачне петље \ref{code:connection_listener_and_sender_go}, канал за слање порука се затвара што сигнализира свим го рутинама да прекину са својим радом и чека се да се све рутине заврше захваљујући \textit{wait} групи. На овај начин постиже се \textit{graceful shutdown} сервера.

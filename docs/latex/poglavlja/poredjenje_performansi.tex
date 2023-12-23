@@ -1,0 +1,58 @@
+\section{Поређење перформанси}
+
+За мерење перформанси, услед недостатка адекватних алата, кориштен је скуп оркестрираних наменских скрипти и алата. За мерење заузећа меморије и процесора кориштен je \textit{pidstat CLI} алат \cite{pidstat}, док је за остале параметре кориштен \textit{Apache Benchmark} \cite{ab}. Тестирање започиње покретањем сервера и добављањем идентификатора његовог процеса који се затим прослеђује двема инстанцама \textit{pidstat}-a (једна за процесор друга за меморију). Затим се покреће \textit{Apache Benchmark} и након завршетка његовог рада, сви програми се гасе и своје податке чувају у одређеним фајловима. Наменска \textit{Go} скрипта затим учитава све генерисане фајлове, парсира битне податке и уписује их у једну линију \textit{CSV} фајла. Наведени кораци описани су унутар \textit{SHELL} скрипте која као улазне параметре прима величину \textit{threadpool}-a, број захтева и број паралелних конекција. Да би се максимално аутоматизовао процес, ова скрипта се позива више пута са различитим параметрима унутар још једне \textit{SHELL} скрипте. Добијени резултати агрегирани су и приказани у табелама \ref{tab:get_perf_comp} и \ref{tab:put_perf_comp}, где су називи колона, због недостатка простора, редуковани, али у тексту испод налази се легенда за њихово тумачење. Све горе наведене скрипте као и оригинални агрегирани подаци могу се пронаћи на путањи \url{https://github.com/stojanovic00/rust-go-server-comp/tree/main/profiling/shell_profiling}.
+
+\begin{itemize}
+    \item lang - language
+\item psz - pool size
+\item reqs - requests
+\item conns - connections
+\item avgcpu - avg cpu[\%]
+\item maxcpu - max cpu[\%]
+\item avgmem - avg mem[\%]
+\item maxmem - max mem[\%]
+\item ttltstt - total test time[s]
+\item preqmt - per request mean time[ms]
+\item trrc - transfer rate rcvd[kB/s]
+\item trs - transfer rate sent[kB/s]
+\item connlat - connection latency[ms]
+\item connproc - connection processing time[ms]
+\end{itemize}\\
+
+\begin{sidewaystable}
+  \centering
+  \csvautotabular{data/get.csv}
+  \caption{Поређење перформанси \textit{GET} захтева}
+  \label{tab:get_perf_comp}
+\end{sidewaystable}
+
+\begin{sidewaystable}
+  \centering
+  \csvautotabular{data/put.csv}
+  \caption{Поређење перформанси \textit{PUT} захтева}
+  \label{tab:put_perf_comp}
+\end{sidewaystable}
+
+\pagebreak
+На основу добијених података можемо донети одређене закључке:
+\begin{itemize}
+    \item Повећањем величине \textit{threadpool}-a у обе имплементације долази до повећања искориштених ресурса процесора.
+    
+    \item \textit{Rust} користи убедљиво мање ресурса процесора, све док величина \textit{threadpool}-a не премаши број системских нити, где тада вођство преузима \textit{Go}. Ова појава може се приписати томе да \textit{Rust} користи системске нити, док \textit{Go} користи зелене нити за покретање својих го рутина. 
+
+    \item За фиксну величину \textit{threadpool}-a, повећањем броја паралелних конекција у обе имплементације долази до смањења искориштених ресурса процесора.
+
+    \item Повећањем величине \textit{threadpool}-a у обе имплементације долази до повећања искориштених  меморијских ресурса, с тиме да је релативно повећање меморије драстичније у \textit{Rust} имплементацији.
+
+    \item \textit{Rust} у свакој ситуацији користи знатно мање меморијских ресурса.
+
+    \item \textit{Rust} имплементација у сваком случају има брже просечно време одговора на захтев.
+    
+    \item \textit{Rust} имплементација готово увек има већи \textit{transfer rate}, како слања тако и примања података
+
+    \item Преласком на 1000 паралелних конекција знатно се повећава латенцијa и смањује брзина обраде конекције, где \textit{Go} има нижу латенцију, али и мању брзину обраде конекције.
+
+    \item Као што је и очекивано, \textit{PUT} захтев захтева више ресурса за његову обраду.
+    
+    
+\end{itemize}

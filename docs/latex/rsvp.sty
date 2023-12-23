@@ -1,0 +1,102 @@
+\ProvidesPackage{rsvp}[2020/01/10 v0.0.1 Makroi za izradu prateceg dokumenta projekta za predmet Racunarski sistemi visokih performansi]
+
+\usepackage{minted}
+\usepackage{xcolor}
+
+% ====================================== РЕДЕФИНИСАНЕ КОМАНДЕ ====================================== %
+\renewcommand\appendixtocname{Додаци}
+\renewcommand\appendixpagename{Додаци}
+\renewcommand{\listingscaption}{Изворни код}
+\renewcommand{\listoflistingscaption}{Списак изворних кодова}
+
+% како ће бити приказани python, c, c++ изворни кодови
+\setminted[python]{frame=lines,framesep=3mm,linenos,mathescape,breaklines}
+\setminted[c]{frame=lines,framesep=3mm,linenos,mathescape,breaklines}
+\setminted[c++]{frame=lines,framesep=3mm,linenos,mathescape,breaklines}
+\setminted[rust]{frame=lines, framesep=3mm, linenos, mathescape,breaklines}
+\setminted[go]{frame=lines, framesep=3mm, linenos, mathescape,breaklines}
+% ====================================== minted СКРАЋЕНИЦЕ ====================================== %
+\newmintinline{python}{}    % употреба \pythoninline{neki kod}
+\newmintinline{c}{}         % \cinline{neki kod}
+\newmintinline{c++}{}       % \cppinline{neki kod}
+
+
+% ===================================================================================== %
+% ====================================== КОМАНДЕ ====================================== %
+% ===================================================================================== %
+
+% Команда за штампање изворног кода из датотеке. Код се штампа у оквиру листинга и биће
+% наведен у листи кодова уколико се у документу користи команда \listoflistings.
+%
+% Параметри:
+%   #1 - назив језика подржаног у minted пакету
+%   #2 - путања до датотеке са изворним кодом
+%   #3 - наслов који ће бити штампан испод исцртаног изворног кода, избегавати специјалне карактере
+%   #4 - лабела која ће бити придружена коду, мора бити јединствена у документу
+\newcommand{\inputsourcecode}[4]{
+    \begin{listing}
+    \inputminted{#1}{#2}
+    \caption{#3}
+    \label{#4}
+    \end{listing}
+}
+
+% Команда за штампање python, c или cpp изворног кода из датотеке. Код се штампа у оквиру
+% листинга и биће наведен у листи кодова уколико се у документу користи команда \listoflistings.
+%
+%
+% Параметри:
+%   #1 - путања до python датотеке
+%   #2 - наслов који ће бити штампан испод исцртаног изворног кода, избегавати специјалне карактере
+%   #3 - лабела која ће бити придружена коду, мора бити јединствена у документу
+%
+% Пример коришћења:
+%   \inputpython{helloworld.py}{Пример штампања изворног кода}{code:helloworldpy}
+%
+\newcommand{\inputpython}[3] {\inputsourcecode{python}{#1}{#2}{#3}}
+\newcommand{\inputc}[3] {\inputsourcecode{c}{#1}{#2}{#3}}
+\newcommand{\inputcpp}[3] {\inputsourcecode{c++}{#1}{#2}{#3}}
+% ТОДО по потреби додати команде и за друге језике
+
+
+% Испис текста у некој од црвеној, зеленој, жутој или наранџастој боји.
+% 
+% Параметри:
+%   #1 - текст који треба исписати у некој од боја
+%
+% Пример употребе:
+%   lorem \red{ipsum}
+%
+\newcommand{\red}[1]{\textcolor{red}{#1}}
+\newcommand{\green}[1]{\textcolor{green}{#1}}
+\newcommand{\yellow}[1]{\textcolor{yellow}{#1}}
+\newcommand{\orange}[1]{\textcolor{orange}{#1}}
+% ТОДО додати још боја по потреби
+
+
+% ====================================================================================== %
+% ====================================== ОКРУЖЕЊА ====================================== %
+% ====================================================================================== %
+
+% Окружење за исцртавање нумерисаног блока пајтон, C и C++ кода.
+%
+% Параметри:
+%   #1 - наслов који ће бити штампан испод исцртаног изворног кода, избегавати специјалне карактере
+%   #2 - лаела које ће бити придружена коду, мора бити јединствена у документу
+%
+% Пример коришћења:
+%   \begin{pythoncode}{Импортовање пакета}{code:pyexample}
+%   import os
+%   \end{pythoncode}
+%
+\newenvironment{pythoncode}[2]
+{\VerbatimEnvironment\begin{listing}\caption{#1}\label{#2}\begin{minted}{python}}
+{\end{minted}\end{listing}}
+
+\newenvironment{ccode}[2]
+{\VerbatimEnvironment\begin{listing}\caption{#1}\label{#2}\begin{minted}{c}}
+{\end{minted}\end{listing}}
+
+\newenvironment{cppcode}[2]
+{\VerbatimEnvironment\begin{listing}\caption{#1}\label{#2}\begin{minted}{c++}}
+{\end{minted}\end{listing}}

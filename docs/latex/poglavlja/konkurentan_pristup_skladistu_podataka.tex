@@ -1,0 +1,81 @@
+\section{Конкурентан приступ складишту података}
+
+У претходном поглављу описано је како се постиже паралелна обрада више захтева, помоћу нити и \textit{threadpool}-а. Након тога потребно је омогућити конкурентан приступ складишту података, како оно не би представљало уско грло паралелног рада нити и њихов паралелан рад ипак претворило у секвенцијалан. Складиште података за потребе овог сервера представљаће мапа чији ће кључ бити идентификатор ентитета, а вредност читав ентитет.\\
+
+Пошто је потребно имплементирати \textit{GET} и \textit{PUT} методе, захтеви се могу издвојити у  специфичне случајеве приступања подацима у мапи:
+
+\begin{enumerate}\label{list:concurrent_cases}
+    \item Читање података приликом \textit{GET}-а које не захтева никакав вид ексклузивног приступа подацима, ни на нивоу мапе, нити на нивоу појединачног елемента мапе.
+    \item \textit{PUT} захтев са ентитетом чији се идентификатор не налази у скупу кључева мапе захтева закључавање читаве мапе како би се додао нови кључ са одговарајућом вредношћу.
+    \item \textit{PUT} захтев са ентитетом чији се идентификатор  налази у скупу кључева мапе захтева закључавање само елемента мапе чији кључ одговара кључу ентитета којег желимо да упишемо.
+\end{enumerate}
+
+\subsection{\textit{Rust} имплементација}
+
+Складиште података моделовано је \textit{Repo} \ref{code:rust_repo.rs} структуром која у себи садржи мапу са кључем \texttt{i64} који представља идентификатор ентитета и вредношћу \texttt{Arc<RwLock<Entity>} која представља енетитет. \texttt{RwLock} представља структуру која омогућава истовремени приступ подацима у случају читања, а ексклузиван приступ у случају измене података, што омогућава већу флексибилност приликом приступања подацима. На исти начин како је обмотана вредност мапе у  \texttt{Arc<RwLock>} обмотава се и читава \textit{Repo} структура, како би се омогућио ексклузиван приступ на нивоу читаве мапе, као и на нивоу појединачног елемента мапе.\\
+
+\begin{listing}[H]
+\inputminted{rust}{kodovi/rust_repo.rs}
+\caption{\textit{Repo} структура и његова заштита од истовремених уписа  \textit{(Rust)}}
+\label{code:rust_repo.rs}
+\end{listing}
+
+Први случај \ref{list:concurrent_cases} решава се постављањем \textit{read lock}-а на нивоу мапе и елемента \ref{code:get_rust}.\\
+
+\begin{listing}[H]
+\inputminted{rust}{kodovi/get.rs}
+\caption{Kонкурентно решење првог случаја \ref{list:concurrent_cases} {(Rust)}}
+\label{code:get_rust}
+\end{listing}
+
+Други случај \ref{list:concurrent_cases} решава се постављањем \textit{write lock}-а на нивоу мапе \ref{code:put_w_rust}.\\
+
+\begin{listing}[H]
+\inputminted{rust}{kodovi/put_w.rs}
+\caption{Kонкурентно решење другог случаја \ref{list:concurrent_cases} {(Rust)}}
+\label{code:put_w_rust}
+\end{listing}
+
+Трећи случај \ref{list:concurrent_cases} решава се постављањем \textit{read lock}-а на нивоу мапе, како би се добавио елемент мапе, и постављањем \textit{write lock}-а на нивоу елемента, како би се омогућио ексклузиван приступ елементу приликом његове измене \ref{code:put_rw_rust}.\\
+
+\begin{listing}[H]
+\inputminted{rust}{kodovi/put_rw.rs}
+\caption{Kонкурентно решење трећег случаја \ref{list:concurrent_cases} {(Rust)}}
+\label{code:put_rw_rust}
+\end{listing}
+
+\subsection{\textit{Go} имплементација}
+
+Будући да \textit{Go} не поседује концепт власничког система типова, није могуће умотати \textit{Repo} структуру као и вредност мапе у нешто попут \texttt{Arc<RwLock>}, већ се проблему мора приступити мало другачије \ref{code:repo_go}. \textit{Repo} структура моделује се на сличан начин, као омотач око мапе, чији је кључ идентификатор ентитета \texttt{int64}, са разликом у вредности мапе која је моделована као структура која садржи сам ентитет, али и структуру \texttt{RWMutex} која омогућава ексклузиван или истовремен приступ неком делу кода. Такође, креира се додатан \texttt{RWMutex} који ће се користити за ексклузиван приступ на нивоу читаве мапе. На овај начин у могућности смо да сваки пут када нам треба ексклузиван приступ неком елементу или читавој мапи закључамо специфичан \texttt{RWMutex} који је везан за тај елемент или мапу и тако уколико неко други покуша да измени елемент или мапу, прво ће покушати да закључа исти \texttt{RWMutex} који је претходно већ закључан што ће га натерати да чека док тренутна го рутинa не откључа \texttt{RWMutex}. \\
+
+\begin{listing}[H]
+\inputminted{rust}{kodovi/repo.go}
+\caption{Неопходне структуре за конкурентан приступ мапи {(Go)}}
+\label{code:repo_go}
+\end{listing}
+
+Први случај \ref{list:concurrent_cases} решава се \textit{read lock}-овањем \texttt{RWMutex}-а мапе и \textit{read lock}-овањем \texttt{RWMutex}-а елемента  \ref{code:get_go}.\\
+
+\begin{listing}[H]
+\inputminted{go}{kodovi/get.go}
+\caption{Kонкурентно решење првог случаја \ref{list:concurrent_cases} {(Go)}}
+\label{code:get_go}
+\end{listing}
+
+Други случај \ref{list:concurrent_cases} решава се \textit{write lock}-овањем \texttt{RWMutex}-а мапе \ref{code:put_w_go}.\\
+
+\begin{listing}[H]
+\inputminted{go}{kodovi/put_w.go}
+\caption{Kонкурентно решење другог случаја \ref{list:concurrent_cases} {(Go)}}
+\label{code:put_w_go}
+\end{listing}
+
+Трећи случај \ref{list:concurrent_cases} решава се \textit{read lock}-овањем \texttt{RWMutex}-а мапе и \textit{write lock}-овањем \texttt{RWMutex}-а елемента  \ref{code:put_rw_go}.\\
+
+\begin{listing}[H]
+\inputminted{go}{kodovi/put_rw.go}
+\caption{Kонкурентно решење трећег случаја \ref{list:concurrent_cases} {(Go)}}
+\label{code:put_rw_go}
+\end{listing}
+
+Битно је напоменути да \textit{Go} унутар \textit{sync} пакета већ има имплементирану мапу која се брине о конкурентном приступу, али како су унутар \textit{Rust} имплементације коришћене само примитиве језика, тако је одрађено и овде.

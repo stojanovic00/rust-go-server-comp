@@ -1,0 +1,14 @@
+\usepackage{fancyhdr}
+
+\makeatletter
+\let\thetitle\@title
+\let\theauthor\@author
+\let\thedate\@date
+\let\theindex\studentindex
+\makeatother
+
+\pagestyle{fancy}
+\fancyhf{}
+\rhead{\theauthor}
+%\lhead{\thetitle}
+\cfoot{\thepage}

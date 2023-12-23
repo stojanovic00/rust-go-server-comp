@@ -1,0 +1,17 @@
+\section{Ослушкивање захтева}
+
+Да би се омогућило слање захтева на сервер потребно је да се сервер подеси да ослушкује \textit{TCP} захтеве на одређеном порту. Обе имплементације проблем решавају на сличан начин, креирањем \textit{TCP listener}-а, који у бесконачној петљи прима конекције иницијализоване од стране клијента и примљене \textit{HTTP} захтеве даље прослеђује на обраду нитима из \textit{threadpool}-а \ref{code:connection_listener_rs}, о којима ће више бити речено у наредном поглављу. Петља бива прекинута у току \textit{graceful} гашења сервера којe се иницира слањем \textit{SIGINT} сигнала серверу.\\
+
+\begin{listing}[H]
+\inputminted{rust}{kodovi/connection_listener.rs}
+\caption{Ослушкивање конекција}
+\label{code:connection_listener_rs}
+\end{listing}
+
+\textit{Http} захтев се затим парсира и из њега се извлаче нопходне информације потребне за његову обраду, међу којима се налазe  и ентитет који треба додати или освежити у складишту податакa (у случају \textit{PUT} захтева) и \textit{id} ентитета (у случају \textit{GET} захтева) \ref{code:entity_http_request}.
+
+\begin{listing}[H]
+\inputminted{rust}{kodovi/entity_http_request.rs}
+\caption{\textit{Entity} и \textit{HttpRequest} структуре података}
+\label{code:entity_http_request}
+\end{listing}
