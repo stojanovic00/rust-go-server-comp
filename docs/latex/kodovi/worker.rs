@@ -8,7 +8,8 @@ impl Worker{
        //First we spin the thread and then assign its handle to worker
 
        let thread = thread::spawn(move || loop {
-           //All threads will wait for their turn to lock the channel and by that receive some job
+           //All threads will wait for their turn to lock the
+           //channel and by that receive some job
           let message = job_listener.lock().unwrap().recv();
 
            match message {

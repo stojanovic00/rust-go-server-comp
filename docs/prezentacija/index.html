@@ -1,0 +1,602 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+
+		<title>Rust/Go server</title>
+
+		<link rel="stylesheet" href="dist/reset.css">
+		<link rel="stylesheet" href="dist/reveal.css">
+		<link rel="stylesheet" href="dist/theme/night.css">
+
+		<!-- Theme used for syntax highlighted code -->
+		<link rel="stylesheet" href="plugin/highlight/monokai.css">
+		<style>
+			ul {
+				width: 85%;
+				text-align: left;
+				font-size: 25px;
+			}
+			.Label{
+				padding-left: 5%;
+				font-size: 25px;
+				text-align: left;
+			}
+		</style>
+	</head>
+	<body>
+
+
+
+
+		<div class="reveal">
+			<div class="slides">
+				<!-- ***NASLOV*** -->
+				<section>
+					<h3>Poređenje implementacija višenitnog HTTP servera u jezicima Rust i Golang</h3>	
+					<p>Aleksandar Stojanović</p>
+				</section>
+
+				<!-- ***GOLANG*** -->
+				<section>
+					<h3>Golang</h3>
+					<ul>
+						<li>Razvijen u Google-u</li>
+						<li>Brzo kompajliranje</li>
+						<li>Robustan dependency managment system</li>
+						<li>Podrška za konkurentno programiranje (Mutex, channel)</li>
+					</ul>
+				</section>
+
+
+				<!-- ***OSLUSKIVANJE ZAHTEVA*** -->
+				<section>
+					<section><h3>Osluškivanje zahteva</h3></section>
+					<section>
+						<ul>
+							<li>Kreira se listener koji osluškuje TCP zahteve u beskonačnoj petlji</li>
+							<li>Zahtevi se parsiraju i prosleđuju nitima threadpool-a</li>
+							<li>Petlja se prekida nakon slanja signala SIGINT koji započinje graceful shutdown</li>
+						</ul>
+						<pre><code data-trim data-noescape>
+							for stream in listener.incoming() {
+								//Check for termination
+								let terminate = termntd_clone.lock().unwrap();
+								if *terminate {
+									break;
+								}
+							
+								let stream = stream.unwrap();
+								let repo_instance = Arc::clone(&repo);
+							
+								thread_pool.execute(move || {
+									handle_connection(stream, repo_instance);
+								})
+							
+							}
+						</code></pre>
+					</section>
+					<section>
+						<h4>Strukture podataka</h4>
+						<pre><code data-trim data-noescape>
+							<xmp> pub struct Entity{
+									pub id: i64,
+									pub description: String,
+									pub value: f32
+								}
+						
+								pub struct HttpRequest{
+									pub method: HttpMethod,
+									pub path: String,
+									pub headers: Vec<String>,
+									pub body: Option<Entity>
+								}
+							</xmp>
+						</code></pre>
+					</section>
+				</section>
+
+				<!-- ***THREAD POOL*** -->
+				<section>
+					<section><h3>Threadpool</h3></section>
+					<section>
+						<ul>
+                            <li>Na početku rada servera instancira unapred definisan broj niti</li>
+							<li>Dodeljuje nitima zadatke za obradu zahteva, koje se po završetku obrade vraćaju nazad u njega</li>
+							<li>Rust koristi sistemske, dok Golang koristi zelene niti</li>
+						</ul>
+					</section>
+
+					<section>
+						<h4>Worker struktura</h4>
+						<ul>
+							<li>Omotač oko niti radi lakše manipulacije</li>
+						</ul>
+
+						<pre><code data-trim data-noescape>
+							<xmp> struct Worker {
+									id: usize,
+									thread: Option<thread::JoinHandle<()>>,
+								} </xmp>
+						</code></pre>
+					</section>
+					<section>
+						<h4>Worker struktura</h4>
+						<ul>
+							<li>Prilikom inicijalizacije ne radi ništa, već čeka na zadatke od strane threadpool-a</li>
+						</ul>
+						<pre style="font-size: 15px;"><code data-trim data-noescape>
+							<xmp> impl Worker{
+									fn new(id: usize, job_listener: Arc<Mutex<mpsc::Receiver<Job>>>) -> Worker{
+									   //First we spin the thread and then assign its handle to worker
+								
+									   let thread = thread::spawn(move || loop {
+										   //All threads will wait for their turn to lock the
+										   // channel and by that receive some job
+										  let message = job_listener.lock().unwrap().recv();
+								
+										   match message {
+											  Ok(job ) => {
+												  println!("Worker {id} got a job; executing.");
+												  job();
+											  },
+											   //Error will occur when job_dispatcher is closed
+											   Err(_) => {
+												   println!("Worker {id} disconnected; shutting down.");
+												   break;
+											   }
+										   }
+									   });
+								
+										Worker{
+											id,
+											thread: Some(thread)
+										}
+									}
+								} </xmp>
+						</code></pre>
+					</section>
+					<section>
+						<h4>Threadpool struktura</h4>
+						<ul>
+							<li>Sadrži vektor dostupnih worker-a</li>
+							<li>
+								Komunikacija preko kanala za razmenu poruka
+								<ul>
+									<li>Multiple producers single consumer šablon mora se adaptirati na single producer multiple workers šablon komunikacije</li>
+								</ul>
+							</li>
+							<li>Poruke predstavljaju closure koji worker izvršava</li>
+						</ul>
+						<pre><code data-trim data-noescape>
+							<xmp> pub struct ThreadPool{
+									workers: Vec<Worker>,
+									job_dispatcher: Option<mpsc::Sender<Job>>
+								} </xmp>
+						</code></pre>
+					</section>
+					<section>
+						<h4>Threadpool struktura</h4>
+						<p class="Label">Inicijalizacija:</p>
+						<pre style="font-size: 15px;"><code data-trim data-noescape>
+							<xmp> impl ThreadPool{
+									pub fn new(size: usize) -> Self{
+										assert!(size > 0);
+								
+										let (job_dispatcher, job_listener) = mpsc::channel();
+								
+										let job_listener = Arc::new(Mutex::new(job_listener));
+								
+										let mut workers = Vec::with_capacity(size);
+								
+										for id in 0..size{
+											workers.push(Worker::new(id, Arc::clone(&job_listener)));
+										}
+								
+										ThreadPool{
+											workers,
+											job_dispatcher: Some(job_dispatcher)
+										}
+									}
+								} </xmp>
+						</code></pre>
+					</section>
+
+					<section>
+						<h4>Threadpool struktura</h4>
+						<p class="Label">Oslobađanje:</p>
+						<pre style="font-size: 15px;"><code data-trim data-noescape>
+							<xmp> impl Drop for ThreadPool{
+									fn drop(&mut self) {
+										drop(self.job_dispatcher.take());
+								
+										for worker in &mut self.workers{
+											//Waits for currently running jobs in threads to finish
+											if let Some(thread) = worker.thread.take(){
+												thread.join().unwrap();
+											}
+										}
+									}
+								} </xmp>
+						</code></pre>
+					</section>
+					<section><h3>Go implementacija</h3></section>
+					<section>
+						<ul>
+							<li>Implementacija kanala za razmenu poruka se poklapa sa modelom potrebnom threadpool-u</li>
+							<li>Nije potrebno definisati specifične strukture podataka</li>
+						</ul>
+
+						<pre><code data-trim data-noescape>
+							<xmp>connChan := make(chan net.Conn)
+							wg := sync.WaitGroup{}</xmp>
+						</code></pre>
+					</section>
+
+					<section>
+						<p class="Label">Pokretanje niti:</p>
+						<pre style="font-size: 17px;"><code data-trim data-noescape>
+							<xmp> for i := 0; i < poolSize; i++ {
+									wg.Add(1)
+									go func(threadNum int) {
+									  defer wg.Done()
+								  
+									  for {
+										select {
+										case conn, ok := <-connChan:
+										  {
+											if !ok {
+											  return
+											}
+											fmt.Printf("Thread %d handles request\n", threadNum)
+											handleConnection(conn, repo, mapMux)
+										  }
+										}
+									  }
+									}(i)
+								  } </xmp>
+						</code></pre>
+					</section>
+					<section>
+						<p class="Label">Prosleđivanje konekcija:</p>
+						<pre style="font-size: 15px;"><code data-trim data-noescape>
+							<xmp> go func() {
+									for {
+									  conn, err := listener.Accept()
+									  if err != nil {
+										fmt.Println("Error accepting:", err)
+										continue
+									  }
+								  
+									  //Check for termination
+									  shutdownServerFlag.Lock()
+									  if shutdownServerFlag.close {
+										close(connChan)
+										shutdownServerFlag.Unlock()
+										return
+									  } else {
+										shutdownServerFlag.Unlock()
+									  }
+								  
+									  //Dispatch request to thread pool
+									  connChan <- conn
+									}
+								  }() </xmp>
+						</code></pre>
+					</section>
+				</section>
+				<!-- KONKURENTAN PRISTUP SKLADIŠTU PODATAKA -->
+				<section>
+					<section><h3>Konkurentan pristup skladištu podataka</h3></section>
+					<section>
+						<ul>
+							<li>Skladište podataka predstavlja mapa</li>
+							<li>Ključ je id entiteta, a vrednost čitav entitet</li>
+							<li>
+								Za potrebe PUT i GET zahteva mogu se primetiti 3 scenaria pristupa skladištu:
+								<ol>
+									<li>Čitanje podataka putem GET-a, koje ne zahteva nikakav vid ekskluzivnog pristupa</li>
+									<li>PUT zahtev sa entitetom čiji se identifikator ne nalazi u skupu ključeva mape, zahteva zaključavanje čitave mape kako bi se dodao novi ključ sa odgovoarajućom vrednosti</li>
+									<li>PUT zahtev sa entitetom čiji se identifikator nalazi u skupu ključeva mape zahteva samo zaključavanje elementa čiji identifikator
+										odgovara identifikatoru entiteta kojeg želimo da upišemo
+									</li>
+								</ol>
+							</li>
+						</ul>
+					</section>
+					<section><h3>Rust implementacija</h3></section>
+					<section>
+						<p class="Label">Repozitorijum:</p>
+						<pre><code data-trim data-noescape>
+							<xmp>pub struct Repo{
+								entities: HashMap<i64,Arc<RwLock<Entity>>>
+							}
+							
+							let repo = Arc::new(RwLock::new(Repo::new()));</xmp>
+						</code></pre>
+						<ul>
+							<li>Umesto klasičnog Mutex-a koristi se RWLock</li>
+						</ul>
+					</section>
+					<section>
+						<p class="Label">Rešenje prvog scenaria (read lock na nivou mape i elementa):</p>
+						<pre style="font-size: 15px;"><code data-trim data-noescape>
+							<xmp>impl Repo{
+							pub fn get_by_id(&self, id: i64) ->  Option<Entity>{
+								match self.entities.get(&id){
+								Some(entity_lock) => {
+									let entity = entity_lock.read().ok()?;
+
+									Some((*entity).clone())
+								},
+								None => None
+								}
+							}
+						}
+
+						{
+						...
+						if let Ok(ro_repo) = repo.read(){
+							match ro_repo.get_by_id(id){
+								Some(entity) => {
+									...
+								}
+								None =>{
+									...
+								}
+							};
+						}
+						...
+						} </xmp>
+						</code></pre>
+					</section>
+					<section>
+						<p class="Label">Rešenje drugog scenaria (write lock na nivou mape):</p>
+						<pre><code data-trim data-noescape>
+							<xmp>{
+							...
+							// Doesnt exist: lock whole map and add
+							let mut w_repo = repo.write().unwrap();
+							let new_id = body.id;
+							let new_ent =  Arc::new(RwLock::new(body));
+							w_repo.entities.insert(new_id, new_ent);
+							...
+							}</xmp>
+						</code></pre>
+					</section>
+					<section>
+						<p class="Label">Rešenje trećeg scenaria (read lock na nivou mape i write lock na nivou elementa):</p>
+						<pre style="font-size: 15px;"><code data-trim data-noescape>
+							<xmp>{
+								...
+								if exists {
+									//just mutate entry without locking whole map
+									if let Some(ro_repo) = repo.read().ok() {
+										let entry = ro_repo.entities.get(&body.id).unwrap();
+								
+										//Locking and changing entity inside repo
+										if let Some(mut rw_entity) = entry.write().ok() {
+											*rw_entity = body;
+										}else{
+											...
+										}
+									} else {
+										...
+									}
+								} else {
+								...
+								} </xmp>
+						</code></pre>
+					</section>
+					<section><h3>Go implementacija</h3></section>
+					<section>
+						<p class="Label">Repozitorijum:</p>
+						<pre style="font-size: 20px;"><code data-trim data-noescape>
+							<xmp>type Repo struct {
+								Entries map[int64]MapEntry
+							}
+							
+							
+							type MapEntry struct {
+								Mux    *sync.RWMutex
+								Entity Entity
+							}
+							
+							func main(){
+							...
+								repo := NewRepo()
+								mapMux := &sync.RWMutex{}
+							...
+							} </xmp>
+						</code></pre>
+						<ul>
+							<li>Umesto klasičnog Mutex-a koristi se RWMutex</li>
+							<li>Ne postoji elegantan način obmotavanja u Mutex kao u Rust-u zbog čega se pravi omotač oko entiteta</li>
+						</ul>
+					</section>
+
+					<section>
+						<p class="Label">Rešenje prvog scenaria (read lock na nivou mape i elementa):</p>
+						<pre><code data-trim data-noescape>
+							<xmp>{
+								...
+								mapMux.RLock()
+								entry, ok := repo.Entries[id]
+								
+								
+								entry.Mux.RLock()
+								jsonBytes, err := json.Marshal(entry.Entity)
+								entry.Mux.RUnlock()
+								
+								mapMux.RUnlock()
+								...
+								} </xmp>
+						</code></pre>
+					</section>
+					<section>
+						<p class="Label">Rešenje drugog scenaria (write lock na nivou mape):</p>
+						<pre><code data-trim data-noescape>
+							<xmp>{
+								...
+								//Entry doesn't exist -> lock whole map
+								mapMux.Lock()
+								repo.Entries[request.Body.Id] = *NewMapEntry(*request.Body)
+								mapMux.Unlock()
+								...
+							  } </xmp>
+						</code></pre>
+					</section>
+					<section>
+						<p class="Label">Rešenje trećeg scenaria (read lock na nivou mape i write lock na nivou elementa):</p>
+						<pre><code data-trim data-noescape>
+							<xmp>{
+								...
+									if exists {
+										mapMux.RLock()
+										entry, _ := repo.Entries[request.Body.Id]
+										entry.Mux.Lock()
+										repo.Entries[request.Body.Id] = *NewMapEntryWMux(*request.Body, entry.Mux)
+										entry.Mux.Unlock()
+										mapMux.RUnlock()
+									} 
+								...
+								}
+								</xmp>
+						</code></pre>
+					</section>
+
+
+
+				</section>
+				<!-- ***STRESS TEST*** -->
+				<section>
+					<section><h3>Stress test</h3></section>
+					<section>
+						<ul>
+							<li>
+								Korišten je Apache JMeter
+								<ul>
+									<li>Podržava definisanje scenaria sa velikim brojem paralelnih konekcija</li>
+									<li>Omogućava analizu završenog scenaria</li>
+									<li>Namenjen je za test arhitekture sa odvojenim test serverom i serverom na kome se nalazi JMeter</li>
+								</ul>
+							</li>
+							<li>
+								Scenario:
+								<ul>
+									<li>10000 paralelnih GET zahteva, gde svaki zahtev čita različit element mape.</li>
+									<li>10000 paralelnih PUT zahteva, gde svaki zahtev upisuje element mape koji do
+										tada nije postojao u mapi.</li>
+									<li>20000 paralelnih PUT zahteva, gde svaka dva zahteva pokušavaju da izmene
+										isti element koji već postoji u mapi.</li>
+								</ul>
+							</li>
+						</ul>
+					</section>
+					<section>
+						<ul>
+							<li>Fajl sa konfiguracijom se nalazi na <a target="_blank" href="https://github.com/stojanovic00/rust-go-server-comp/blob/main/profiling/stress_testing/rust_testing.jmx">linku</a></li>
+							<li>Test podaci generisani su namenskom go <a target="_blank" href="https://github.com/stojanovic00/rust-go-server-comp/tree/main/profiling/stress_testing/test_data_generator">skriptom</a> </li>
+						</ul>
+						<p class="Label">Rezultati Rust:</p>
+						<img src="imgs/stress_test_rust.png" alt="">
+						<p class="Label">Rezultati Go:</p>
+						<img src="imgs/stress_test_go.png" alt="">
+
+					</section>
+				</section>
+				<section>
+					<section>Poređenje performansi</section>
+					<section>
+					<p class="Label">Korišteni alati:</p>
+						<ul>
+							<li>Skup orkestriranih SHELL i Go skripti</li>
+							<li>pidstat - memorija i CPU</li>
+							<li>Apache benchmark - metrike vezane za http zahteve</li>
+						</ul>
+					</section>
+					<section>
+					<p class="Label">Tok testiranja:</p>
+						<ul>
+							<li>Pokretanje servera i dobavaljanje njegovog PID-a</li>
+							<li>Pokretanje dve instance pidstata (jedna za MEM druga za CPU) koje svoja merenja upisuju u privremene txt fajlove</li>
+							<li>Pokretanje Apache Benchmarka koji po završetku svoje rezultate takođe upisuje u txt fajl</li>
+							<li>Namenska go skritpa učitava generisane fajlove sa rezultatima, parsira i obrađuje bitne delove i upisuje ih u jednu liniju CSV fajla</li>
+						</ul>
+						<p class="Label">Čitav proces pokreće se za N konfiguracija (br. zahteva, br. konekcija, veličina threadpool-a) koje su definisane u zasebnoj SHELL skritpi</p>
+					</section>
+					<section>
+						<h4>Zapažanja</h4>
+						<ul>
+							<li>Povećanjem veličine threadpool-a u obe implementacije dolazi do povećanja iskorištenih resursa procesora.</li>
+
+							<li>Rust koristi ubedljivo manje resursa procesora, sve dok veličina threadpool-a ne premaši broj sistemskih niti, gde tada vođstvo preuzima Go. Ova pojava
+							može se pripisati tome da Rust koristi sistemske niti, dok Go koristi zelene niti za pokretanje svojih go rutina.
+							</li>
+							
+							<li>Za fiksnu veličinu threadpool-a, povećanjem broja paralelnih konekcija u obe
+							implementacije dolazi do smanjenja iskorištenih resursa procesora.
+							</li>
+							
+							<li>Povećanjem veličine threadpool-a u obe implementacije dolazi do povećanja
+							iskorištenih memorijskih resursa, s time da je relativno povećanje memorije drastičnije u Rust implementaciji.
+							</li>
+							
+							<li>Rust u svakoj situaciji koristi znatno manje memorijskih resursa.
+							</li>
+						</ul>
+					</section>
+					<section>
+						<h4>Zapažanja</h4>
+						<ul>
+							<li>Rust implementacija u svakom slučaju ima brže prosečno vreme odgovora na
+							zahtev.
+							</li>
+							
+							<li>Rust implementacija gotovo uvek ima veći transfer rate, kako slanja tako i primanja podataka
+							</li>
+							
+							<li>Prelaskom na 1000 paralelnih konekcija znatno se povećava latencija i smanjuje brzina obrade konekcije, gde Go ima nižu latenciju, ali i manju brzinu
+							obrade konekcije.
+							</li>
+							
+							<li>PUT zahtev zahteva više resursa za njegovu obradu.
+							</li>
+							
+						</ul>
+					</section>
+				</section>
+
+
+			</div>
+
+
+
+
+
+
+
+		</div>
+
+		<script src="dist/reveal.js"></script>
+		<script src="plugin/notes/notes.js"></script>
+		<script src="plugin/markdown/markdown.js"></script>
+		<script src="plugin/highlight/highlight.js"></script>
+		<script>
+			// Initialize Reveal.js
+			Reveal.initialize({
+			  hash: true,
+			  plugins: [ RevealMarkdown, RevealHighlight, RevealNotes ]
+			});
+
+			// Replace < and > globally within the code block
+			document.addEventListener('DOMContentLoaded', function() {
+			var codeElement = document.getElementById('myCode');
+			codeElement.innerHTML = codeElement.innerHTML
+				.replace(/&lt;/g, '<')
+				.replace(/&gt;/g, '>');
+			});
+		  </script>
+	</body>
+</html>
